@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Gemini-Based Chat Assistant</title>
+  <title>re: Mind</title>
   <link rel="icon" href="{{ url_for('static', filename='chatbot.png') }}" type="image/jpeg">
   <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -21,11 +21,14 @@
 <body class="bg-gray-100 h-screen flex items-center justify-center">
   <div class="w-full max-w-screen-xl mx-4 h-[95vh] flex flex-col bg-white rounded-xl shadow-lg overflow-hidden">
     <div class="p-4 bg-blue-600 text-white text-xl font-semibold flex justify-between items-center">
-      <span>Gemini-Based Assistant</span>
+      <div class="flex items-center space-x-2">
+        <img src="{{ url_for('static', filename='chatbot.png') }}" alt="Logo" class="h-8 w-8"/>
+        <span>re: Mind</span>
+      </div>
       <div class="text-sm flex items-center space-x-2">
         <span>Logged in as <span class="font-bold">{{ username }}</span></span>
         <span class="text-white">|</span>
-        <a href="{{ url_for('select_chat') }}" class="underline hover:text-gray-200">Chat Selection</a>
+        <a href="{{ url_for('change_password') }}" class="underline hover:text-gray-200">Change Password</a>
         <span class="text-white">|</span>
         <a href="{{ url_for('logout') }}" class="underline hover:text-gray-200">Logout</a>
       </div>
@@ -36,13 +39,14 @@
     </div>
 
     <form id="chat-form" class="p-4 border-t border-gray-200 flex" onsubmit="sendMessage(event)">
-      <input 
-        id="message" 
-        type="text" 
-        placeholder="Type your message..." 
-        class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        required 
-      />
+      <textarea
+        id="message"
+        placeholder="Type your message..."
+        class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+        rows="1"
+        required
+        oninput="autoGrow(this)"
+      ></textarea>
       <button 
         type="submit" 
         class="ml-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700"
@@ -54,7 +58,16 @@
 
   <script>
     const chatBox = document.getElementById("chat-box");
-
+    function autoGrow(element) {
+      element.style.height = "auto"; // reset height so scrollHeight is correct
+      element.style.height = (element.scrollHeight) + "px"; // set height to scrollHeight
+    }
+    document.getElementById("message").addEventListener("keydown", function(event) {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault(); // Prevent newline
+        document.getElementById("chat-form").requestSubmit(); // Trigger submit
+      }
+    });
     async function sendMessage(event) {
       event.preventDefault();
 

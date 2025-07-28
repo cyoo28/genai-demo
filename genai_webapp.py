@@ -11,6 +11,8 @@ from threading import Thread, Lock
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session
 import bcrypt
 import boto3
+import vertexai
+from vertexai import rag
 from google import genai
 from google.genai.types import (
     GenerateContentConfig,
@@ -21,7 +23,7 @@ from google.genai.types import (
 from google.oauth2 import service_account
 # import custom files
 from sqlClient import MySQLClient
-from s3Client import MyS3Client
+from gcsClient import MyGCSClient
 # configure logger
 logging.basicConfig(stream=sys.stderr, 
                     level=logging.INFO, 
@@ -56,20 +58,8 @@ class Config:
             cls.configStore["userTable"] = ssmClient.get_parameter(Name="/genai/userTable", WithDecryption=True)["Parameter"]["Value"] # table with user info in MySQL database
             cls.configStore["resetTable"] = ssmClient.get_parameter(Name="/genai/resetTable", WithDecryption=True)["Parameter"]["Value"] # table with password reset tokens in MySQL database
             cls.configStore["confirmTable"] = ssmClient.get_parameter(Name="/genai/confirmTable", WithDecryption=True)["Parameter"]["Value"] # table with confirmation tokens in MySQL database
-            cls.configStore["appParam"] = ssmClient.get_parameter(Name="/genai/appParam", WithDecryption=True)["Parameter"]["Value"] # aws parameter for webapp session key
-            cls.configStore["s3Bucket"] = ssmClient.get_parameter(Name="/genai/s3Bucket", WithDecryption=True)["Parameter"]["Value"] # aws bucket for chat history
+            cls.configStore["gcsBucket"] = ssmClient.get_parameter(Name="/genai/gcsBucket", WithDecryption=True)["Parameter"]["Value"] # aws bucket for chat history
             cls.configStore["emailSender"] = ssmClient.get_parameter(Name="/genai/emailSender", WithDecryption=True)["Parameter"]["Value"] # sender for ses emails
-            cls.configStore["corpusId"] = ssmClient.get_parameter(Name="/genai/corpusId/test", WithDecryption=True)["Parameter"]["Value"] # test corpus id for RAG
-            #cls.configStore["corpusId"] =  ssmClient.get_parameter(Name="/genai/corpusId/prod", WithDecryption=True)["Parameter"]["Value"] # prod corpus id for RAG
-            # create MySQLClient instance in aws
-            cls.configStore["logger"].debug(f"Getting database credentials from AWS Secrets Manager")
-            dbResponse = smClient.get_secret_value(SecretId=cls.configStore["dbSecret"])
-            dbInfo = json.loads(dbResponse["SecretString"])
-            cls.configStore["logger"].debug(f"Setting up SQL client")
-            cls.configStore["sqlClient"] = MySQLClient(cls.configStore["dbHost"], dbInfo["username"], dbInfo["password"], cls.configStore["dbName"])
-            # create MyS3ChatHistory instance
-            cls.configStore["logger"].debug(f"Setting up s3 client")
-            cls.configStore["s3Client"] = MyS3Client(awsSession, cls.configStore["s3Bucket"])
             # retrieve gcp service account key from aws secrets manager
             cls.configStore["logger"].debug(f"Getting service account key from AWS Secrets Manager")
             saResponse = smClient.get_secret_value(SecretId=cls.configStore["gcpSecret"])
@@ -80,53 +70,55 @@ class Config:
                 saInfo,
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
                 )
+            # create MySQLClient instance in aws
+            cls.configStore["logger"].debug(f"Getting database credentials from AWS Secrets Manager")
+            dbResponse = smClient.get_secret_value(SecretId=cls.configStore["dbSecret"])
+            dbInfo = json.loads(dbResponse["SecretString"])
+            cls.configStore["logger"].debug(f"Setting up SQL client")
+            cls.configStore["sqlClient"] = MySQLClient(cls.configStore["dbHost"], dbInfo["username"], dbInfo["password"], cls.configStore["dbName"])
+            # create MyGCSClient instance
+            cls.configStore["logger"].debug(f"Setting up s3 client")
+            cls.configStore["gcsClient"] = MyGCSClient(cls.configStore["gcsBucket"], credentials, cls.configStore["gcpProject"])
             # set up genai client
             cls.configStore["logger"].debug(f"Setting up genai client")
             cls.configStore["genaiClient"] = genai.Client(vertexai=True, project=cls.configStore["gcpProject"], location=cls.configStore["gcpRegion"], credentials=credentials)
+            # get today's date
+            cls.configStore["today"] = datetime.today().strftime("%B %d, %Y")
             # set up chatbot instructions
-            chatbotInstruction = """
-                You are a warm, empathetic, conversational assistant who listens attentively and encourages the user to share about their day and experiences.
+            cls.configStore["chatbotInstruction"] = f"""
+                Today is {cls.configStore["today"]}. 
+                You are a conversational assistant. Your purpose is to respond to user questions clearly, concisely, and helpfully.
+                You also aim to learn about the user over time to personalize your responses, but only when the user offers information voluntarily.
 
-                As you chat, naturally guide the conversation to capture key details such as:
-                - Where the user was
-                - What the user did
-                - Who they spent time with
-                - How they felt about the experience
+                Tone & Personality:
+                - Be warm, neutral, and engaging.
+                - Avoid sounding robotic or overly enthusiastic.
+                - Match the user's technical level and style when possible.
 
-                Do this in a gentle, casual manner. Avoid direct, pointed questions or sounding like an interviewer. Instead, reflect on what the user says and respond in ways that invite them to share more about these important aspects.
+                Boundaries & Behavior:
+                - Only respond to what the user has asked; do not go off-topic.
+                - Do not make assumptions or hallucinate details about the user.
+                - Use what you've learned about the user only to improve response relevance.
 
-                You also have access to a memory database of the user's past experiences.
-                Use it to recall and reference memories when they are meaningfully related to what the user is saying. For example:
-                - If the user mentions a person, place, or activity they’ve mentioned before
-                - If today’s experience is similar to a past event
-                - If events seem connected (e.g. same day, recurring themes, patterns)
+                User Learning Strategy:
+                - Passively learn facts about the user (e.g., name, job, goals, preferences).
+                - Log these facts for future personalization.
+                - Never repeat learned facts unless relevant to the current prompt.
+                - Avoid drawing conclusions from single messages.
 
-                Bring up these past memories in a natural, thoughtful way — as if you remember them. This helps the user reflect, feel understood, and recognize connections in their own story.
+                Style Guidelines:
+                - Keep responses efficient, natural, and helpful.
+                - Use lists, bullet points, or headers if the user seems to prefer structure.
+                - Lead with a direct answer, then offer explanation if appropriate.
+                - Ask clarifying questions only when needed for correctness.
 
-                Use memory context sparingly and seamlessly. Never break the conversational tone or sound like you're querying data. Your goal is to help the user express themselves freely while building a rich, meaningful memory profile over time.
-
-                Keep your tone friendly, supportive, and open-ended.
+                Edge Cases & Ethics:
+                - Never provide medical, legal, or financial advice beyond general information.
+                - Refuse harmful, unsafe, or unethical requests politely.
+                - Acknowledge limitations when asked about capabilities or memory.
                 """
-            # set up rag
-            corpus = VertexRagStore(
-                rag_corpora=[cls.configStore["corpusId"]],
-                similarity_top_k=10,
-                vector_distance_threshold=0.5,
-            )
-            ragTool = Tool(
-                retrieval=Retrieval(vertex_rag_store=corpus)
-            )
-            # set up configuration for chatbot model
-            cls.configStore["chatbotConfig"] = GenerateContentConfig(
-                system_instruction=chatbotInstruction,
-                temperature=0.4, # [float, 0.0, 1.0] control randomness/creativity of response (0.0 is more deterministic, 1.0 is more liberal)
-                    top_p=0.95, # [float, 0.0, 1.0] consider min set of most probable tokens that exceed cumulative probability, p, and then randomly pick from the next token from this smaller set
-                    top_k=40, # [int, 1, 1000] consider the k most probable next tokens and then randomly pick from the next token from this smaller set
-                    max_output_tokens=800, # [int, 1, inf] limit maximum tokens contained in response
-                    presence_penalty=0.4, # [float, -2.0, 2.0] negative values discourage use of new tokens while positive values encourage use of new tokens
-                    frequency_penalty=0.2, # [float, -2.0, 2.0] negative values encourage repetition of tokens while positive values discourage repetition of tokens
-                    tools=[ragTool]
-                )
+            # initialize rag
+            vertexai.init(credentials=credentials, project=cls.configStore["gcpProject"], location=cls.configStore["gcpRegion"])
             # In-memory store for chatbots keyed by username
             cls.configStore["userChatbots"] = {}
             cls.configStore["chatbotsLock"] = Lock()
@@ -149,34 +141,6 @@ def send_email(sesClient, sender, recipients, subject, body):
             app.config["Config"]["logger"].warning("Notification may not have been sent: {}".format(res))
     except Exception as e:
         app.config["Config"]["logger"].error(f"Error sending email to {recipients}: {e}")
-# define function to convert s3 object to model format
-def chat_from_obj(chatObj):
-    app.config["Config"]["logger"].debug(f"Converting s3 object to model format")
-    # convert s3 object to json
-    chatJson = json.loads(chatObj)
-    # convert json format into model format
-    chatHistory = []
-    for message in chatJson:
-        parts = [{"text": part} for part in message["parts"]]
-        chatHistory.append({
-            "role": message["role"],
-            "parts": parts
-        })
-    return chatHistory
-# define function to convert chat to s3 object
-def chat_to_obj(chatHistory):
-    app.config["Config"]["logger"].debug(f"Converting model format to s3 object")
-    # convert model format into json format
-    chatJson = []
-    for message in chatHistory:
-        parts = [part.text for part in message.parts]
-        chatJson.append({
-            "role": message.role,
-            "parts": parts
-        })
-    # convert json to object for s3
-    chatObj = json.dumps(chatJson)
-    return chatObj
 # define function to cleanup idle chatbots
 def chatbot_cleanup():
     while True:
@@ -198,7 +162,7 @@ app = Flask(__name__)
 app.config["Config"] = Config.configStore
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30) # time out session after 30 minutes
 app.secret_key = os.urandom(32)
-# set route for landing page
+# set route for unspecified page
 @app.route("/")
 def index():
     # check if the user has already signed in
@@ -207,7 +171,17 @@ def index():
         return redirect(url_for("chat"))
     # otherwise, redirect to login page
     else:
-        return redirect(url_for("login"))
+        return redirect(url_for("home"))
+# set route for home page
+@app.route("/home")
+def home():
+    # check if the user has already signed in
+    if "username" in session:
+        # if they are, redirect to chat
+        return redirect(url_for("chat"))
+    # otherwise, redirect to login page
+    else:
+        return render_template("home.html")
 # set route for login page
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -239,7 +213,7 @@ def login():
             session.permanent = True
             # redirect to the chat
             app.config["Config"]["logger"].info(f"User {username} logged in.")
-            return redirect(url_for("select_chat"))
+            return redirect(url_for("start_chat"))
     # render the login page
     error = request.args.get("error")
     if error == "session_expired":
@@ -358,6 +332,19 @@ def confirm_email():
         app.config["Config"]["logger"].warning(f"Failed email confirmation attempt for user: {tokenEntry['username']}")
         # redirect to login page and display error
         return redirect(url_for("login", error="confirm_expired"))
+    # get username for naming the corpus
+    user = tokenEntry["username"]
+    embeddingModel = "publishers/google/models/text-embedding-005"
+    rag.create_corpus(
+        display_name=f"{user}-journal",
+        backend_config=rag.RagVectorDbConfig(
+            rag_embedding_model_config=rag.RagEmbeddingModelConfig(
+                vertex_prediction_endpoint=rag.VertexPredictionEndpoint(
+                    publisher_model=embeddingModel
+                )
+            )
+        ),
+    )
     # format user information into dict with sql columns as keys
     userUpdateValue = {"confirmed": True}
     userUpdateFilter = {"username": tokenEntry["username"]}
@@ -517,49 +504,76 @@ def change_password():
             app.config["Config"]["sqlClient"].update_entry(userUpdateValue, userUpdateFilter, app.config["Config"]["userTable"])
             app.config["Config"]["logger"].info(f"User {username} changed password.")
             # redirect to login page
-            return redirect(url_for("select_chat"))
+            return redirect(url_for("chat"))
     return render_template("change_password.html")
-# set route for chat select
-@app.route("/select_chat")
-def select_chat():
-    # check that the user is logged in
-    if "username" not in session:
-        # if not, redirect back to login page
-        return redirect(url_for("login", error="session_expired"))
-    # render select chat page
-    return render_template("select_chat.html")
-# set backend for selecting chat
-@app.route("/start_chat", methods=["POST"])
+# set route for starting up chat
+@app.route("/start_chat")
 def start_chat():
     # retrieve the user's username
     username = session.get("username")
     # if not logged in, redirect back to login page
     if not username:
         return redirect(url_for("login", error="session_expired"))
-    # retrieve user's choice
-    choice = request.form.get("chat_choice")  # "continue" or "new"
     # set the s3 key using the user's username
-    s3Key = f"chat-history/{username}.json"
+    gcsKey = f"chat-history/{username}.json"
     # set the chat history appropriately
     with app.config["Config"]["chatbotsLock"]:
         history = []
-        if choice=="continue":
-            try:
-                if app.config["Config"]["s3Client"].obj_lookup(s3Key):
-                    app.config["Config"]["logger"].info(f"User {username} is continuing an old chat.")
-                    chatObj = app.config["Config"]["s3Client"].obj_read(s3Key)
-                    history = chat_from_obj(chatObj)
-                else:
-                    app.config["Config"]["logger"].info(f"No previous chat found for {username}. Starting fresh.")
-            except Exception as e:
-                app.config["Config"]["logger"].warning(f"Failed to load chat history for {username}: {e}")
+        try:
+            if app.config["Config"]["gcsClient"].obj_lookup(gcsKey):
+                app.config["Config"]["logger"].info(f"User {username} has started a chat session.")
+                history, _ = app.config["Config"]["gcsClient"].obj_read(gcsKey)
+            # if the user has never started a chat before, start a new chat
+            else:
+                app.config["Config"]["logger"].info(f"No previous chat found for {username}. Starting fresh.")
+        except Exception as e:
+            app.config["Config"]["logger"].warning(f"Failed to load chat history for {username}: {e}")
+        # look for rag corpus name
+        ragDisplayName = f"{username}-journal"
+        corporaIterator = rag.list_corpora()
+        corpusName = None
+        for corpusObj in corporaIterator:
+            if corpusObj.display_name==ragDisplayName:
+                corpusName = corpusObj.name
+                break
+        if corpusName:
+            corpus = VertexRagStore(
+                rag_corpora=[corpusName],
+                similarity_top_k=10,
+                vector_distance_threshold=0.5,
+            )
+            ragTool = Tool(
+                retrieval=Retrieval(vertex_rag_store=corpus)
+            )
+            app.config["Config"]["logger"].info(f"Successfully loaded corpus for {username}")
+            # set up configuration for chatbot model
+            chatbotConfig = GenerateContentConfig(
+                system_instruction=app.config["Config"]["chatbotInstruction"],
+                temperature=0.3, # [float, 0.0, 1.0] control randomness/creativity of response (0.0 is more deterministic, 1.0 is more liberal)
+                top_p=0.8, # [float, 0.0, 1.0] consider min set of most probable tokens that exceed cumulative probability, p, and then randomly pick from the next token from this smaller set
+                top_k=40, # [int, 1, 1000] consider the k most probable next tokens and then randomly pick from the next token from this smaller set
+                max_output_tokens=800, # [int, 1, inf] limit maximum tokens contained in response
+                presence_penalty=0.4, # [float, -2.0, 2.0] negative values discourage use of new tokens while positive values encourage use of new tokens
+                frequency_penalty=0.2, # [float, -2.0, 2.0] negative values encourage repetition of tokens while positive values discourage repetition of tokens
+                tools=[ragTool]
+            )
         else:
-            app.config["Config"]["logger"].info(f"User {username} has started a new chat.")
+            app.config["Config"]["logger"].warning(f"Failed to load corpus for {username}")
+            # set up configuration for chatbot model
+            chatbotConfig = GenerateContentConfig(
+                system_instruction=app.config["Config"]["chatbotInstruction"],
+                temperature=0.3, # [float, 0.0, 1.0] control randomness/creativity of response (0.0 is more deterministic, 1.0 is more liberal)
+                top_p=0.8, # [float, 0.0, 1.0] consider min set of most probable tokens that exceed cumulative probability, p, and then randomly pick from the next token from this smaller set
+                top_k=40, # [int, 1, 1000] consider the k most probable next tokens and then randomly pick from the next token from this smaller set
+                max_output_tokens=800, # [int, 1, inf] limit maximum tokens contained in response
+                presence_penalty=0.4, # [float, -2.0, 2.0] negative values discourage use of new tokens while positive values encourage use of new tokens
+                frequency_penalty=0.2, # [float, -2.0, 2.0] negative values encourage repetition of tokens while positive values discourage repetition of tokens
+            )
         # create a chatbot        
         app.config["Config"]["userChatbots"][username] = app.config["Config"]["genaiClient"].chats.create(
             model=app.config["Config"]["geminiModel"],
             history=history,
-            config=app.config["Config"]["chatbotConfig"]
+            config=chatbotConfig
         )
     # Set last message time
     app.config["Config"]["lastMessageTime"][username] = time()
@@ -611,9 +625,8 @@ def send_message():
         app.config["Config"]["logger"].debug(f"Model response for {username}: {response.text}")
         # write updated chat history to s3
         chatKey = f"chat-history/{username}.json"
-        chatHistory = chatbot.get_history()
-        chatObj = chat_to_obj(chatHistory)
-        app.config["Config"]["s3Client"].obj_write(chatKey, chatObj, "application/json")
+        chatHistory = [part.to_json_dict() for part in  chatbot.get_history()]
+        app.config["Config"]["gcsClient"].obj_write(chatKey, chatHistory)
         # return the response
         return jsonify({"response": response.text})
     # if there is an error while handling the message,

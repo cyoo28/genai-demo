@@ -1,4 +1,5 @@
 import logging
+import json
 logger = logging.getLogger(__name__)
 
 # define an s3 class
@@ -14,7 +15,7 @@ class MyS3Client:
         # try to retrieve the object
         try:
             response = self.s3.get_object(Bucket=self.bucket, Key=key)
-            data = response["Body"].read().decode("utf-8")
+            data = json.loads(response["Body"].read())
             logger.debug(f"Successfully read S3 object with key: {key}")
             # return the decoded object
             return data
@@ -25,11 +26,20 @@ class MyS3Client:
         logger.debug(f"Attempting to write S3 object with key: {key}")
         # try to upload the object
         try:
-            body = obj.encode("utf-8")
+            body = json.dumps(obj, indent=2).encode("utf-8")
             self.s3.put_object(Bucket=self.bucket, Key=key, Body=body, ContentType=contentType)
             logger.debug(f"Successfully wrote S3 object with key: {key}")
         except Exception as e:
             logger.error(f"Error writing S3 object with key {key}: {e}", exc_info=True)
+            raise
+    def obj_delete(self, key):
+        logger.debug(f"Attempting to delete s3 object with key: {key}")
+        # try to delete the object
+        try:
+            self.s3.delete_object(Bucket=self.bucket, Key=key)
+            logger.debug(f"Successfully deleted s3 object with key: {key}")
+        except Exception as e:
+            logger.error(f"Error deleting s3 object with key {key}: {e}", exc_info=True)
             raise
     def obj_lookup(self, key):
         logger.debug(f"Attempting to lookup S3 object with key: {key}")
@@ -49,4 +59,21 @@ class MyS3Client:
                 raise
         except Exception as e:
             logger.error(f"Unexpected error looking up object with key {key}: {e}", exc_info=True)
+            raise
+    def obj_list(self, key):
+        logger.debug(f"Listing objects in bucket: {self.bucket} under {key}")
+        # try to list objects in the bucket
+        try:
+            paginator = self.s3.get_paginator("list_objects_v2")
+            pageIterator = paginator.paginate(Bucket=self.bucket, Prefix=key)
+            # convert paginated list into a python list
+            objectKeys = []
+            for page in pageIterator:
+                for obj in page.get("Contents", []):
+                    if obj["Key"] != key:
+                        objectKeys.append(obj["Key"])
+            logger.debug(f"Found {len(objectKeys)} objects in bucket under {key}")
+            return objectKeys
+        except Exception as e:
+            logger.error(f"Error listing objects in bucket under {key}: {e}", exc_info=True)
             raise

@@ -66,7 +66,7 @@
     </style>
     <script>
         setTimeout(function() {
-            window.location.href = "{{ url_for('login') }}";
+            window.location.href = "{{ url_for('home') }}";
         }, 3000);
     </script>
 </head>
@@ -74,8 +74,8 @@
     <div class="container">
         <h2>Logged Out</h2>
         <p>You have been successfully logged out.</p>
-        <p>Redirecting to the login page in 3 seconds...</p>
-        <p><a href="{{ url_for('login') }}">Click here if you are not automatically redirected.</a></p>
+        <p>Redirecting to the home page in 3 seconds...</p>
+        <p><a href="{{ url_for('home') }}">Click here if you are not automatically redirected.</a></p>
     </div>
 </body>
 </html>
