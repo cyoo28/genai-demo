@@ -1,28 +1,7 @@
 import logging
 from datetime import datetime, timezone
-import parsedatetime
 
 logger = logging.getLogger(__name__)
-
-# Initialize the parsedatetime calendar
-cal = parsedatetime.Calendar()
-
-# Function to get the time an event occurred
-def get_eventtime(text):
-    # Attempt to extract date/time from text
-    timeStruct, status = cal.parse(text)
-    if status == 1:
-        # If successfuly, extract: year, month, day, hour, minute, second
-        dt = datetime(*timeStruct[:6])
-        # Make datetime UTC aware
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
-        # Return extracted time
-        return dt.strftime("%Y-%m-%d")
-    else:
-        return None
 
 # Bedrock AI client wrapper
 class BedrockClient:
@@ -75,8 +54,6 @@ class BedrockClient:
             responseText = response["output"]["message"]["content"][0]["text"]
             logger.debug(f"Generated response for test message: {responseText}")
             return responseText
-        # Parse event time from message (if present)
-        eventtime = get_eventtime(msg) or None
         # Current timestamp in UTC
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         # Add user message to history
@@ -91,8 +68,6 @@ class BedrockClient:
         )
         responseText = response["output"]["message"]["content"][0]["text"]
         logger.info(f"Generated model response for '{username}'")
-        # Update timestamp for model response
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         # Add model response to history
         history.append({"role":"assistant", "content":[{"text":responseText}]})
         logger.debug(f"Appended model message to history for '{username}'")         
