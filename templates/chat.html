@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>TutorialBot</title>
+  <title>re: Mind</title>
   <link rel="icon" href="{{ url_for('static', filename='chatbot.png') }}" type="image/jpeg">
   <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -23,7 +23,7 @@
     <div class="p-4 bg-blue-600 text-white text-xl font-semibold flex justify-between items-center">
       <div class="flex items-center space-x-2">
         <img src="{{ url_for('static', filename='chatbot.png') }}" alt="Logo" class="h-8 w-8"/>
-        <span>TutorialBot</span>
+        <span>re: Mind</span>
       </div>
       <div class="text-sm flex items-center space-x-2">
         <span>Logged in as <span class="font-bold">{{ username }}</span></span>
@@ -86,7 +86,7 @@
 
       const data = await res.json();
       if (data.response) {
-        appendMessage("TutorialBot", data.response, "bg-blue-100", "text-left");
+        appendMessage("Remy", data.response, "bg-blue-100", "text-left");
       } else {
         appendMessage("Error", data.error, "bg-red-100", "text-left");
       }
