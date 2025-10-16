@@ -9,8 +9,8 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, s
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Add parent folder to sys.path so we can import
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "aws")))
-from aws_config import AWSConfig
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "gcp")))
+from gcp_config import GCPConfig
 
 # Configure Logging
 logging.basicConfig(
@@ -19,12 +19,12 @@ logging.basicConfig(
     format="%(asctime)-11s [%(levelname)s] %(message)s (%(name)s:%(lineno)d)"
 )
 logger = logging.getLogger(__name__)
-# Initialize AWS config
-aws_config = AWSConfig()
+# Initialize GCP config
+gcp_config = GCPConfig()
 try:
-    config_store = aws_config.create()
+    config_store = gcp_config.create()
 except Exception as e:
-    logger.error(f"Failed to initialize AWS config: {e}", exc_info=True)
+    logger.error(f"Failed to initialize GCP config: {e}", exc_info=True)
     sys.exit(1)
 
 # Flask app setup
@@ -371,9 +371,9 @@ def send_message():
     try:
         # If there is a message, try to send the message to chatbot
         response = app.config["Config"]["genaiClient"].send_message(username, userInput)
-        logger.debug(f"Model response for {username}: {response}")
+        logger.debug(f"Model response for {username}: {response.text}")
         # Return the response
-        return jsonify({"response": response})
+        return jsonify({"response": response.text})
     except Exception as e:
         # If there is an error while handling the message,
         logger.error(f"Error processing message for {username}: {e}", exc_info=True)

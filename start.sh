@@ -1,10 +1,12 @@
 #!/bin/bash
-#
-# Script to start web server hosted in AWS.
-# Assumes the venv is in ~/env/bedrock
+# create the tunnel
+# gcloud compute ssh ix-pub --tunnel-through-iap -- -L 3306:10.16.192.3:3306
+
+# Script to start web server hosted in GCP.
+# Assumes the venv is in ~/env/vertex
 # Assumes the webapp .py is in ~/genai-demo
 
-VENV=~/env/bedrock
+VENV=~/env/vertex
 APP_HOME=~/genai-demo
 
 if [ ! -d $VENV ]; then
@@ -20,11 +22,11 @@ echo "Activating virtual env: $VENV/bin/activate"
 
 echo "Running app"
 cd $APP_HOME
-export AWSPROFILE=ix-dev
-export AWSREGION=us-east-1
+export GCPPROJECT=ix-sandbox
+export GCPREGION=us-central1
 #export DBHOST=localhost
 export DBHOST=127.0.0.1
-export FLASK_APP=genai_webapp 
+export FLASK_APP=genai_webapp
 flask run
 
 deactivate
