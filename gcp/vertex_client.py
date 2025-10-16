@@ -86,8 +86,6 @@ class VertexClient:
         # Generate model response using the full chat history
         response = self.client.models.generate_content(model=self.model, config=config, contents=history)
         logger.info(f"Generated model response for '{username}'")
-        # Update timestamp for model response
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         # Add model response to both history
         history.append({"role":"model", "parts":[{"text":response.text}]})
         logger.debug(f"Appended model message to history for '{username}'")         
