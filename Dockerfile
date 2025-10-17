@@ -17,7 +17,7 @@ RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Stage 2: Final runtime image
-FROM gcr.io/distroless/python3
+FROM python:3.13-alpine
 
 WORKDIR /app
 
@@ -33,7 +33,6 @@ EXPOSE 8080
 
 # Environment variables
 ENV AWSREGION=us-east-1 \
-    DBHOST=127.0.0.1 \
     FLASK_APP=genai_webapp \
     PORT=8080
 
