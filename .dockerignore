@@ -1,0 +1,8 @@
+# Exclude git and caches
+.git
+__pycache__
+*.pyc
+
+# Exclude local dev scripts and docs
+README.md
+start.sh
