@@ -25,7 +25,7 @@ class AWSConfig:
             return self.configStore
         # Set up AWS session
         logger.debug("Setting up AWS session")
-        awsProfile = os.environ.get("AWSPROFILE")
+        awsProfile = os.environ.get("AWSPROFILE", None)
         awsRegion = os.environ.get("AWSREGION")
         self.session = AWSCredHelper().get_session(awsProfile, awsRegion)
         # Set up secrets manager/parameter store client
