@@ -175,7 +175,7 @@ def signup():
             # Make datetime more readable
             emailExpire = expire.strftime("%A, %B %d, %Y at %I:%M %p")
             # Send email through SES
-            subject = "IX Cloud Signup Confirmation"
+            subject = "Chatbot Helper Confirmation"
             body = f"""Hello {newUsername},
 
                 Thank you for signing up! Please confirm your email address by clicking the link below:
@@ -187,7 +187,7 @@ def signup():
                 If you did not sign up for this account, please ignore this email.
 
                 Best regards,  
-                IX Cloud Security Team
+                Chatbot Helper Team
             """
             app.config["Config"]["emailClient"].send_email([newEmail], subject, body)
             logger.info(f"User {newUsername} signed up.")
@@ -234,7 +234,7 @@ def forgot_password():
             # Make datetime more readable
             emailExpire = expire.strftime("%A, %B %d, %Y at %I:%M %p")
             # Send email through SES
-            subject = "IX Cloud Password Reset Request"
+            subject = "Chatbot Helper Password Reset Request"
             body = f"""Hello {matchedUser["username"]},
 
                 Please reset your account password by clicking the link below:
@@ -246,7 +246,7 @@ def forgot_password():
                 If you did not request to reset your password, please ignore this email.
 
                 Best regards,  
-                IX Cloud Security Team
+                Chatbot Helper Security Team
             """
             app.config["Config"]["emailClient"].send_email([email], subject, body)
             # Render forgot_password_success.html
