@@ -30,6 +30,6 @@ export AWSREGION=us-east-1
 # Run the webapp
 echo "Running app"
 cd $APP_HOME
-# Run using Waitress on port 5000
-python -m waitress --host=0.0.0.0 --port=5000 genai_webapp:app
+# Run using Waitress on port 8080
+python -m waitress --host=0.0.0.0 --port=8080 genai_webapp:app
 deactivate
