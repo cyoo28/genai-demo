@@ -29,6 +29,7 @@ except Exception as e:
 
 # Flask app setup
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.config["Config"] = config_store
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30) # Time out session after 30 minutes
 app.secret_key = os.urandom(32)
@@ -97,7 +98,7 @@ def login():
                 "sessionToken",
                 sessionToken,
                 httponly=True,
-                secure=True,
+                secure=False,
                 samesite="Lax",
             )
             # Redirect to the chat
@@ -402,5 +403,5 @@ def handle_exception(e):
 
 if __name__ == "__main__":
     # Start webapp
-    logger.info("Starting Flask app on http://127.0.0.1:5000")
-    app.run()
+    logger.info("Starting Flask app on http://0.0.0.0:8080")
+    app.run(host="0.0.0.0", port=8080)
