@@ -19,7 +19,8 @@ echo "Activating virtual env: $VENV/bin/activate"
 # Export environment variables
 # Only export AWSPROFILE if running on local machine
 echo "Setting environment variables"
-if ! curl -s --connect-timeout 1 http://169.254.169.254/latest/meta-data/ >/dev/null; then
+if [[ "$(curl -s --connect-timeout 1 -o /dev/null -w '%{http_code}'\
+    http://169.254.169.254/latest/meta-data/)" != "200" ]]; then
     echo "Not on EC2 — setting AWSPROFILE and DBHOST"
     export AWSPROFILE=ix-dev
     export DBHOST=127.0.0.1
